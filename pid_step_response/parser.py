@@ -7,14 +7,9 @@ BBL file parser using orangebox library.
 Extracts setpoint, gyro data, and PID parameters from blackbox logs.
 """
 
-import sys
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-
-# Add the orangebox package to path if needed
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from orangebox import Parser
 

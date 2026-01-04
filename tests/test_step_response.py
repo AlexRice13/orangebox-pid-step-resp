@@ -7,15 +7,11 @@ Unit tests for the PID Step Response library.
 """
 
 import os
-import sys
 import unittest
 import tempfile
 from pathlib import Path
 
 import numpy as np
-
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pid_step_response.models import (
     AxisResult,

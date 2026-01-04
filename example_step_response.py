@@ -11,13 +11,14 @@ This script shows how to:
 2. Analyze step response for Roll, Pitch, Yaw axes
 3. Extract rise time and overshoot metrics
 4. Generate plots of the step response curves
+
+Usage:
+    pip install -e .  # Install the package first
+    python example_step_response.py <bbl_file>
 """
 
 import sys
 from pathlib import Path
-
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
 
 from pid_step_response import StepResponseAnalyzer, plot_step_response
 

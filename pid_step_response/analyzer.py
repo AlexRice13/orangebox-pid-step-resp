@@ -7,7 +7,9 @@ Main analyzer class that orchestrates BBL parsing and step response calculation.
 """
 
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
+
+import numpy as np
 
 from .models import AxisResult, LogData, PIDParams, StepResponseResult
 from .parser import get_log_count, parse_all_logs, parse_bbl_file
@@ -143,8 +145,8 @@ class StepResponseAnalyzer:
     def _analyze_axis(
         self,
         axis_name: str,
-        setpoint: 'np.ndarray',
-        gyro: 'np.ndarray',
+        setpoint: np.ndarray,
+        gyro: np.ndarray,
         log_rate: float,
         pid_params: PIDParams
     ) -> AxisResult:
@@ -161,8 +163,6 @@ class StepResponseAnalyzer:
         Returns:
             AxisResult object with computed step response and metrics
         """
-        import numpy as np
-        
         result = AxisResult(axis_name=axis_name)
         result.pid_params = pid_params
         result.setpoint = setpoint

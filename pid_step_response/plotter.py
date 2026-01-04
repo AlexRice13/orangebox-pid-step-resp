@@ -7,11 +7,14 @@ Plotting functions for step response visualization.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import numpy as np
 
 from .models import AxisResult, StepResponseResult
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 
 def plot_step_response(
@@ -22,7 +25,7 @@ def plot_step_response(
     figsize: tuple = (14, 10),
     single_panel: bool = False,
     y_max: float = 1.75
-) -> 'Figure':
+) -> "Figure":
     """
     Plot step response curves for the specified axes.
     
@@ -203,7 +206,7 @@ def plot_setpoint_gyro(
     save_path: Optional[Union[str, Path]] = None,
     show: bool = True,
     figsize: tuple = (14, 8)
-) -> 'Figure':
+) -> "Figure":
     """
     Plot setpoint vs gyro curves for the specified axes.
     
