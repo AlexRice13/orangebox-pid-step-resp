@@ -7,13 +7,31 @@ BBL file parser using orangebox library.
 Extracts setpoint, gyro data, and PID parameters from blackbox logs.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from orangebox import Parser
 
 from .models import LogData, PIDParams
+
+
+def safe_float_convert(value: Any) -> float:
+    """
+    Safely convert a value to float, returning NaN for invalid values.
+    
+    Args:
+        value: Value to convert (can be string, number, None, etc.)
+        
+    Returns:
+        Float value, or np.nan if conversion fails
+    """
+    if value is None or value == '':
+        return np.nan
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return np.nan
 
 
 def parse_pid_string(pid_string: str) -> Tuple[float, float, float]:
@@ -161,8 +179,13 @@ def parse_bbl_file(file_path: str, log_index: int = 1) -> LogData:
     if not frames_data:
         return LogData(log_index=log_index, headers=headers)
     
-    # Convert to numpy array for easier processing
-    data_array = np.array(frames_data, dtype=float)
+    # Convert frame data to numpy array, handling non-numeric values
+    converted_frames = []
+    for frame in frames_data:
+        converted_frame = [safe_float_convert(val) for val in frame]
+        converted_frames.append(converted_frame)
+    
+    data_array = np.array(converted_frames, dtype=float)
     
     # Find field indices
     time_idx = get_field_index(field_names, 'time', 'time_us', 'loopIteration')
@@ -199,10 +222,14 @@ def parse_bbl_file(file_path: str, log_index: int = 1) -> LogData:
     
     # Calculate log rate (samples per millisecond)
     if len(log_data.time_us) > 1:
-        # Time is in microseconds
-        dt_us = np.median(np.diff(log_data.time_us))
-        if dt_us > 0:
-            log_data.log_rate = 1000.0 / dt_us  # Convert to samples per ms
+        # Time is in microseconds, use nanmedian to ignore NaN values
+        time_diff = np.diff(log_data.time_us)
+        # Filter out NaN and non-positive differences
+        valid_diffs = time_diff[~np.isnan(time_diff) & (time_diff > 0)]
+        if len(valid_diffs) > 0:
+            dt_us = np.median(valid_diffs)
+            if dt_us > 0:
+                log_data.log_rate = 1000.0 / dt_us  # Convert to samples per ms
     
     # Extract PID parameters
     log_data.roll_pid = extract_pid_params(headers, 'roll')

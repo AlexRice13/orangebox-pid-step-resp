@@ -107,6 +107,10 @@ def calculate_step_response(
     setpoint = np.asarray(setpoint[:n])
     gyro = np.asarray(gyro[:n])
     
+    # Replace NaN values with 0 to avoid calculation issues
+    setpoint = np.nan_to_num(setpoint, nan=0.0)
+    gyro = np.nan_to_num(gyro, nan=0.0)
+    
     # Calculate file duration in seconds
     file_dur_sec = n / (log_rate * 1000)
     
@@ -143,8 +147,12 @@ def calculate_step_response(
             step_resp = deconvolve_step_response(sp_seg, gy_seg, wnd)
             
             if step_resp is not None and len(step_resp) > 0:
+                # Skip if response contains NaN (can occur from numerical issues in FFT)
+                if np.any(np.isnan(step_resp)):
+                    continue
                 # Normalize step response
-                step_resp = step_resp / np.max(np.abs(step_resp)) if np.max(np.abs(step_resp)) > 0 else step_resp
+                max_val = np.max(np.abs(step_resp))
+                step_resp = step_resp / max_val if max_val > 0 else step_resp
                 step_responses.append(step_resp)
         except Exception:
             continue

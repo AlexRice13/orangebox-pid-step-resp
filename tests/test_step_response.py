@@ -172,6 +172,29 @@ class TestCalculator(unittest.TestCase):
             )
             self.assertIsInstance(time_ms, np.ndarray)
     
+    def test_calculate_step_response_with_nan_values(self):
+        """Test step response calculation handles NaN values gracefully."""
+        log_rate = 4.0
+        n_samples = 10000
+        
+        np.random.seed(42)
+        setpoint = np.random.randn(n_samples) * 50
+        gyro = np.random.randn(n_samples) * 50
+        
+        # Insert some NaN values
+        setpoint[100:110] = np.nan
+        gyro[500:510] = np.nan
+        
+        # Should not raise an exception
+        time_ms, step_resp, num_segments = calculate_step_response(
+            setpoint, gyro, log_rate, smooth_factor=1
+        )
+        
+        self.assertIsInstance(time_ms, np.ndarray)
+        self.assertIsInstance(step_resp, np.ndarray)
+        # Should not contain NaN in the output
+        self.assertFalse(np.any(np.isnan(step_resp)))
+    
     def test_deconvolve_step_response_basic(self):
         """Test deconvolution with known signals."""
         # Create simple signals
