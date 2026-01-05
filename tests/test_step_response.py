@@ -22,8 +22,8 @@ from pid_step_response.models import (
 from pid_step_response.calculator import (
     calculate_metrics,
     calculate_step_response,
+    deconvolve_step_response,
     lowess_smooth,
-    wiener_deconvolution,
 )
 
 
@@ -195,33 +195,28 @@ class TestCalculator(unittest.TestCase):
         # Should not contain NaN in the output
         self.assertFalse(np.any(np.isnan(step_resp)))
     
-    def test_wiener_deconvolution_basic(self):
-        """Test Wiener deconvolution with known signals."""
-        # Create simple signals (2D arrays for batch processing)
+    def test_deconvolve_step_response_basic(self):
+        """Test deconvolution with known signals."""
+        # Create simple signals
         n = 1000
-        np.random.seed(42)
-        input_signal = np.random.randn(1, n) * 10
+        input_signal = np.random.randn(n) * 10
         
         # Create output as filtered input (simple low-pass)
-        output_signal = np.zeros_like(input_signal)
-        output_signal[0] = np.convolve(input_signal[0], np.ones(10)/10, mode='same')
+        output_signal = np.convolve(input_signal, np.ones(10)/10, mode='same')
         
-        dt = 0.001  # 1ms time step
-        deconvolved = wiener_deconvolution(input_signal, output_signal, dt, cutfreq=25.0)
+        step_resp = deconvolve_step_response(input_signal, output_signal, 100)
         
-        self.assertIsNotNone(deconvolved)
-        self.assertEqual(deconvolved.shape[0], 1)
+        self.assertIsNotNone(step_resp)
+        self.assertEqual(len(step_resp), 100)
     
-    def test_wiener_deconvolution_handles_empty(self):
-        """Test Wiener deconvolution handles edge cases gracefully."""
-        # Small inputs should still work
-        input_signal = np.array([[1.0, 2.0, 3.0, 4.0, 5.0]])
-        output_signal = np.array([[1.0, 2.0, 3.0, 4.0, 5.0]])
+    def test_deconvolve_step_response_short_input(self):
+        """Test deconvolution with input shorter than window."""
+        input_signal = np.array([1, 2, 3])
+        output_signal = np.array([1, 2, 3])
         
-        dt = 0.001
-        deconvolved = wiener_deconvolution(input_signal, output_signal, dt, cutfreq=25.0)
+        step_resp = deconvolve_step_response(input_signal, output_signal, 100)
         
-        self.assertIsNotNone(deconvolved)
+        self.assertIsNone(step_resp)
     
     def test_calculate_metrics_ideal_response(self):
         """Test metrics calculation with ideal step response."""

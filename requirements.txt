@@ -1,6 +1,5 @@
 # Core dependencies
 numpy>=1.19.0
-scipy>=1.8.0
 
 # Optional dependencies for plotting
 matplotlib>=3.3.0

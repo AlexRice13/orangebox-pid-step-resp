@@ -11,7 +11,6 @@ setup(
     scripts=["scripts/bb2csv", "scripts/bbsplit", "scripts/bb2gpx"],
     install_requires=[
         "numpy>=1.19.0",
-        "scipy>=1.8.0",
     ],
     extras_require={
         "plotting": ["matplotlib>=3.3.0"],
