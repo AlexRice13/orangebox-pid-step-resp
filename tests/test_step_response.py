@@ -227,6 +227,7 @@ class TestCalculator(unittest.TestCase):
         # even if the raw response had steady-state error
         if num_segments > 0 and len(step_resp) > 0:
             # Check the last 100ms of the response (400-500ms window)
+            # Note: log_rate is in samples/ms, so 400ms * 4 samples/ms = 1600 samples
             final_norm_start_idx = int(400 * log_rate)
             if final_norm_start_idx < len(step_resp):
                 final_steady_state = step_resp[final_norm_start_idx:]

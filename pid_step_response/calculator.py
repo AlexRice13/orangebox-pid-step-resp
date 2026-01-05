@@ -233,11 +233,12 @@ def calculate_step_response(
         # Final steady-state normalization: force the curve to stabilize at 1.0
         # by dividing by the mean of the last 100ms (400-500ms window)
         # This matches PID Toolbox behavior where all curves converge exactly to 1.0
-        final_norm_start_ms = 400  # Start of final normalization window
-        final_norm_start_idx = int(final_norm_start_ms * log_rate)
+        final_norm_start_ms = 400  # Start of final normalization window (in ms)
+        final_norm_start_idx = int(final_norm_start_ms * log_rate)  # log_rate is samples/ms
         if final_norm_start_idx < len(avg_response):
             final_steady_state = avg_response[final_norm_start_idx:]
             final_steady_mean = np.nanmean(final_steady_state)
+            # Only normalize if mean is positive and reasonable (>0.1 threshold)
             if final_steady_mean > 0.1 and not np.isnan(final_steady_mean):
                 avg_response = avg_response / final_steady_mean
         
