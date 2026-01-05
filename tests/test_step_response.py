@@ -195,6 +195,45 @@ class TestCalculator(unittest.TestCase):
         # Should not contain NaN in the output
         self.assertFalse(np.any(np.isnan(step_resp)))
     
+    def test_final_steady_state_normalization(self):
+        """Test that final normalization brings steady-state to 1.0.
+        
+        This tests the feature that divides the final averaged step response
+        by the mean of its last 100ms (400-500ms window) to force the curve
+        to stabilize at exactly 1.0, matching PID Toolbox behavior.
+        """
+        log_rate = 4.0  # 4 kHz
+        n_samples = 20000  # 5 seconds of data at 4kHz
+        
+        # Create step input with multiple steps (to generate multiple segments)
+        np.random.seed(123)
+        setpoint = np.zeros(n_samples)
+        gyro = np.zeros(n_samples)
+        
+        # Create multiple step responses at different times
+        step_times = [1000, 5000, 9000, 13000]
+        for step_time in step_times:
+            setpoint[step_time:step_time + 2000] = 100.0  # Step to 100 deg/s
+            # Create a response that converges to 1.1 * setpoint (10% steady-state error)
+            for i in range(step_time, min(step_time + 2000, n_samples)):
+                target = setpoint[i] * 1.1  # 10% overshoot at steady state
+                gyro[i] = gyro[i-1] + (target - gyro[i-1]) / 20
+        
+        time_ms, step_resp, num_segments = calculate_step_response(
+            setpoint, gyro, log_rate, smooth_factor=1
+        )
+        
+        # With final normalization, the steady-state (last 100ms) should be close to 1.0
+        # even if the raw response had steady-state error
+        if num_segments > 0 and len(step_resp) > 0:
+            # Check the last 100ms of the response (400-500ms window)
+            final_norm_start_idx = int(400 * log_rate)
+            if final_norm_start_idx < len(step_resp):
+                final_steady_state = step_resp[final_norm_start_idx:]
+                final_mean = np.nanmean(final_steady_state)
+                # The mean should be very close to 1.0 after normalization
+                self.assertAlmostEqual(final_mean, 1.0, places=1)
+    
     def test_deconvolve_step_response_basic(self):
         """Test deconvolution with known signals."""
         # Create simple signals
