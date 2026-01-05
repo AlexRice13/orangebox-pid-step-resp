@@ -7,7 +7,7 @@ Step response calculation using FFT-based deconvolution.
 Faithfully replicates the PIDtoolbox (PTstepcalc.m) algorithm.
 """
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import numpy as np
 
 
@@ -60,52 +60,56 @@ def calculate_step_response(
     gyro: np.ndarray,
     log_rate: float,
     smooth_factor: int = 1,
-    y_correction: bool = False
+    y_correction: bool = True
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     Calculate the step response using FFT-based deconvolution.
     
     This function faithfully replicates the PIDtoolbox PTstepcalc.m algorithm:
-    1. Apply optional smoothing to gyro data
-    2. Segment the data into 2-second windows
-    3. Find segments with sufficient input signal
+    1. Apply optional smoothing to gyro data (LOWESS)
+    2. Segment the data into 2-second windows with overlap
+    3. Find segments with sufficient input signal (>= 20 deg/s)
     4. Deconvolve each segment using FFT to get step response
-    5. Average all valid segments
+    5. Apply Y-correction to normalize steady-state to 1.0
+    6. Quality control: keep only segments where steady-state is between 0.5 and 3.0
+    7. Average all valid segments
     
     Args:
         setpoint: Setpoint (input) signal array (deg/s)
         gyro: Gyro (output) signal array (deg/s)
         log_rate: Log rate in samples per millisecond (e.g., 4.0 for 4kHz)
         smooth_factor: Smoothing level (1=off, 2=low, 3=medium, 4=high)
-        y_correction: Whether to apply Y-axis offset correction
+        y_correction: Whether to apply Y-axis normalization (default: True)
         
     Returns:
         Tuple of (time_ms, step_response, num_segments)
         - time_ms: Time array in milliseconds (0 to 500ms)
-        - step_response: Averaged step response
+        - step_response: Averaged step response (normalized to converge to 1.0)
         - num_segments: Number of valid segments used
     """
-    # Smoothing values matching PIDtoolbox
+    # Smoothing values matching PIDtoolbox: smoothVals = [1 20 40 60]
     smooth_vals = [1, 20, 40, 60]
     smooth_window = smooth_vals[min(smooth_factor - 1, 3)]
     
     # Apply smoothing to gyro if requested
+    gyro = np.asarray(gyro).copy()
     if smooth_factor > 1 and smooth_window > 1:
         gyro = lowess_smooth(gyro, smooth_window)
     
-    # Parameters matching PIDtoolbox
-    min_input = 20  # Minimum input rate to consider valid
+    # Parameters matching PIDtoolbox PTstepcalc.m
+    min_input = 20  # Minimum input rate to consider valid segment
     segment_length = int(log_rate * 2000)  # 2 second segments
     wnd = int(log_rate * 1000 * 0.5)  # 500ms step response window
-    step_resp_duration_ms = 500  # Maximum duration for step response
+    step_resp_duration_ms = 500  # Max duration of step resp in ms for plotting
+    pad_length = 100  # Zero padding on each side (matching MATLAB)
     
-    # Create time array
+    # Create time array: t = 0 : 1/lograte : StepRespDuration_ms
     t = np.arange(0, step_resp_duration_ms + 1/log_rate, 1/log_rate)
     
     # Ensure arrays are numpy and same length
     n = min(len(setpoint), len(gyro))
     setpoint = np.asarray(setpoint[:n])
-    gyro = np.asarray(gyro[:n])
+    gyro = gyro[:n]
     
     # Replace NaN values with 0 to avoid calculation issues
     setpoint = np.nan_to_num(setpoint, nan=0.0)
@@ -114,7 +118,7 @@ def calculate_step_response(
     # Calculate file duration in seconds
     file_dur_sec = n / (log_rate * 1000)
     
-    # Subsampling factor based on file duration (for processing efficiency)
+    # Subsampling factor based on file duration (matching PIDtoolbox)
     if file_dur_sec <= 20:
         subsample_factor = 10
     elif file_dur_sec <= 60:
@@ -122,40 +126,96 @@ def calculate_step_response(
     else:
         subsample_factor = 3
     
-    # Collect step responses from segments
-    step_responses = []
+    # Create segment vector: segment_vector = 1 : round(segment_length/subsampleFactor) : length(SP)
+    segment_step = max(1, round(segment_length / subsample_factor))
+    segment_vector = list(range(0, n, segment_step))
     
-    # Process segments
-    num_segments = max(1, n // segment_length)
+    # Find valid segments: ensure segment doesn't exceed data length
+    # MATLAB: NSegs = max(find((segment_vector+segment_length) < segment_vector(end)))
+    valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
+                            if sv + segment_length <= n]
+    n_segs = len(valid_segment_indices)
     
-    for seg_idx in range(0, n - segment_length, segment_length // 2):
-        # Extract segment
-        seg_end = min(seg_idx + segment_length, n)
-        sp_seg = setpoint[seg_idx:seg_end]
-        gy_seg = gyro[seg_idx:seg_end]
+    if n_segs == 0:
+        return t[:wnd] if len(t) > wnd else t, np.zeros(wnd), 0
+    
+    # Collect valid segments
+    sp_segments: List[np.ndarray] = []
+    gy_segments: List[np.ndarray] = []
+    
+    for i in valid_segment_indices:
+        start_idx = segment_vector[i]
+        end_idx = start_idx + segment_length
         
-        # Check if segment has sufficient input
-        if np.max(np.abs(sp_seg)) < min_input:
+        sp_seg = setpoint[start_idx:end_idx]
+        
+        # Check if segment has sufficient input: max(abs(SP(...))) >= minInput
+        if np.max(np.abs(sp_seg)) >= min_input:
+            sp_segments.append(sp_seg)
+            gy_segments.append(gyro[start_idx:end_idx])
+    
+    if len(sp_segments) == 0:
+        return t[:wnd] if len(t) > wnd else t, np.zeros(wnd), 0
+    
+    # Process each segment with FFT deconvolution
+    step_responses: List[np.ndarray] = []
+    
+    for sp_seg, gy_seg in zip(sp_segments, gy_segments):
+        # Apply Hann window (matching MATLAB: hann(length(...)))
+        window = np.hanning(len(sp_seg))
+        a = gy_seg * window  # a = GYseg(i,:).*hann(length(GYseg(i,:)))'
+        b = sp_seg * window  # b = SPseg(i,:).*hann(length(SPseg(i,:)))'
+        
+        # Zero padding on both sides (matching MATLAB)
+        a_padded = np.concatenate([np.zeros(pad_length), a, np.zeros(pad_length)])
+        b_padded = np.concatenate([np.zeros(pad_length), b, np.zeros(pad_length)])
+        
+        # FFT and normalize by length (matching MATLAB)
+        G = np.fft.fft(a_padded) / len(a_padded)
+        H = np.fft.fft(b_padded) / len(b_padded)
+        Hcon = np.conj(H)
+        
+        # Impulse response: imp = real(ifft((G .* Hcon) ./ (H .* Hcon + 0.0001)))
+        imp = np.real(np.fft.ifft((G * Hcon) / (H * Hcon + 0.0001)))
+        
+        # Step response = cumulative sum of impulse response
+        resptmp = np.cumsum(imp)
+        
+        # Y-correction: normalize so steady-state mean = 1.0
+        # Find steady-state window: t > 200 & t < StepRespDuration_ms
+        # The response array length depends on the padded segment length
+        # Map indices based on the window (wnd) which corresponds to 500ms
+        samples_per_ms = len(resptmp) / step_resp_duration_ms if step_resp_duration_ms > 0 else log_rate
+        steady_state_start = int(200 * samples_per_ms)
+        steady_state_end = min(int(step_resp_duration_ms * samples_per_ms), len(resptmp))
+        
+        if steady_state_end > len(resptmp):
+            steady_state_end = len(resptmp)
+        if steady_state_start >= steady_state_end:
+            steady_state_start = max(0, steady_state_end - 10)
+        
+        steady_state_resp = resptmp[steady_state_start:steady_state_end]
+        
+        if len(steady_state_resp) == 0:
             continue
         
-        # Skip segments with too little variance
-        if np.std(sp_seg) < min_input / 4:
-            continue
+        # Apply Y-correction (matching MATLAB)
+        if y_correction:
+            steady_state_mean = np.nanmean(steady_state_resp)
+            if steady_state_mean != 0 and not np.isnan(steady_state_mean):
+                # yoffset = 1 - nanmean(steadyStateResp)
+                # resptmp(i,:) = resptmp(i,:) * (yoffset+1)
+                yoffset = 1 - steady_state_mean
+                resptmp = resptmp * (yoffset + 1)
+                # Recalculate steady state after correction
+                steady_state_resp = resptmp[steady_state_start:steady_state_end]
         
-        # Calculate step response using deconvolution
-        try:
-            step_resp = deconvolve_step_response(sp_seg, gy_seg, wnd)
-            
-            if step_resp is not None and len(step_resp) > 0:
-                # Skip if response contains NaN (can occur from numerical issues in FFT)
-                if np.any(np.isnan(step_resp)):
-                    continue
-                # Normalize step response
-                max_val = np.max(np.abs(step_resp))
-                step_resp = step_resp / max_val if max_val > 0 else step_resp
+        # Quality control: min(steadyStateResp) > 0.5 && max(steadyStateResp) < 3
+        if np.min(steady_state_resp) > 0.5 and np.max(steady_state_resp) < 3:
+            # Keep only the step response window: stepresponse(j,:)=resptmp(i,1:1+wnd)
+            step_resp = resptmp[:wnd + 1]
+            if len(step_resp) > 0 and not np.any(np.isnan(step_resp)):
                 step_responses.append(step_resp)
-        except Exception:
-            continue
     
     # Average all valid step responses
     if step_responses:
@@ -169,11 +229,6 @@ def calculate_step_response(
             t = t[:len(avg_response)]
         elif len(avg_response) > len(t):
             avg_response = avg_response[:len(t)]
-        
-        # Apply Y correction if requested
-        if y_correction and len(avg_response) > 10:
-            # Offset to start at 0
-            avg_response = avg_response - avg_response[0]
         
         return t, avg_response, len(step_responses)
     
@@ -189,11 +244,8 @@ def deconvolve_step_response(
     """
     Deconvolve the step response using FFT.
     
-    The step response h(t) is calculated by deconvolving:
-    output = input * h
-    
-    In the frequency domain:
-    H(f) = Output(f) / Input(f)
+    This is a legacy function kept for compatibility.
+    The main calculation now happens in calculate_step_response.
     
     Args:
         input_signal: Input (setpoint) signal
@@ -206,40 +258,27 @@ def deconvolve_step_response(
     if len(input_signal) < window_length or len(output_signal) < window_length:
         return None
     
-    # Pad to power of 2 for efficient FFT
-    n = len(input_signal)
-    nfft = 2 ** int(np.ceil(np.log2(n + window_length)))
+    pad_length = 100
     
-    # Remove mean (DC offset)
-    input_centered = input_signal - np.mean(input_signal)
-    output_centered = output_signal - np.mean(output_signal)
+    # Apply Hann window
+    window = np.hanning(len(input_signal))
+    a = output_signal * window
+    b = input_signal * window
     
-    # Apply window to reduce spectral leakage
-    window = np.hanning(len(input_centered))
-    input_windowed = input_centered * window
-    output_windowed = output_centered * window
+    # Zero padding
+    a_padded = np.concatenate([np.zeros(pad_length), a, np.zeros(pad_length)])
+    b_padded = np.concatenate([np.zeros(pad_length), b, np.zeros(pad_length)])
     
-    # FFT of both signals
-    input_fft = np.fft.fft(input_windowed, nfft)
-    output_fft = np.fft.fft(output_windowed, nfft)
+    # FFT and normalize
+    G = np.fft.fft(a_padded) / len(a_padded)
+    H = np.fft.fft(b_padded) / len(b_padded)
+    Hcon = np.conj(H)
     
-    # Regularization to avoid division by zero
-    eps = 1e-10
-    input_power = np.abs(input_fft) ** 2
-    regularizer = np.max(input_power) * eps
+    # Impulse response with regularization
+    imp = np.real(np.fft.ifft((G * Hcon) / (H * Hcon + 0.0001)))
     
-    # Wiener deconvolution for noise robustness
-    h_fft = (output_fft * np.conj(input_fft)) / (input_power + regularizer)
-    
-    # Inverse FFT to get impulse response
-    impulse_response = np.real(np.fft.ifft(h_fft))
-    
-    # Convert impulse response to step response (cumulative sum)
-    step_response = np.cumsum(impulse_response[:window_length])
-    
-    # Normalize
-    if np.max(np.abs(step_response)) > 0:
-        step_response = step_response / np.max(np.abs(step_response))
+    # Step response = cumulative sum
+    step_response = np.cumsum(imp)[:window_length]
     
     return step_response
 
@@ -251,9 +290,11 @@ def calculate_metrics(
     """
     Calculate step response metrics.
     
+    The step response should already be normalized to converge to 1.0.
+    
     Args:
         time_ms: Time array in milliseconds
-        step_response: Step response array
+        step_response: Step response array (normalized to steady-state = 1.0)
         
     Returns:
         Tuple of (rise_time_ms, max_overshoot, settling_time_ms)
@@ -261,13 +302,7 @@ def calculate_metrics(
     if len(step_response) < 2 or len(time_ms) < 2:
         return 0.0, 0.0, 0.0
     
-    # Normalize response to [0, 1] range
     response = step_response.copy()
-    response_min = np.min(response)
-    response_max = np.max(response)
-    
-    if response_max - response_min < 1e-10:
-        return 0.0, 0.0, 0.0
     
     # Determine final value (use average of last 10% of signal)
     final_idx = max(1, int(len(response) * 0.9))
@@ -276,29 +311,25 @@ def calculate_metrics(
     if abs(final_value) < 1e-10:
         return 0.0, 0.0, 0.0
     
-    # Normalize to final value
-    response_norm = response / final_value
-    
     # Rise time: time to reach ~63.2% (1 - 1/e) of final value
-    # Alternative: time from 10% to 90%
-    target_63 = 0.632
+    target_63 = 0.632 * final_value
     rise_time_ms = 0.0
     
-    for i, val in enumerate(response_norm):
+    for i, val in enumerate(response):
         if val >= target_63:
             rise_time_ms = time_ms[i] if i < len(time_ms) else 0.0
             break
     
-    # Maximum overshoot
-    peak_value = np.max(response_norm)
-    max_overshoot = max(0.0, peak_value - 1.0)  # Overshoot above 1.0 (final value)
+    # Maximum overshoot: (peak - final) / final
+    peak_value = np.max(response)
+    max_overshoot = max(0.0, (peak_value - final_value) / final_value)
     
     # Settling time: time to settle within 2% of final value
-    settling_threshold = 0.02
+    settling_threshold = 0.02 * abs(final_value)
     settling_time_ms = 0.0
     
-    for i in range(len(response_norm) - 1, -1, -1):
-        if abs(response_norm[i] - 1.0) > settling_threshold:
+    for i in range(len(response) - 1, -1, -1):
+        if abs(response[i] - final_value) > settling_threshold:
             settling_time_ms = time_ms[min(i + 1, len(time_ms) - 1)]
             break
     
