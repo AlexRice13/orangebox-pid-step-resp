@@ -182,19 +182,22 @@ def calculate_step_response(
         resptmp = np.cumsum(imp)
         
         # Y-correction: normalize so steady-state mean = 1.0
-        # Find steady-state window: t > 200 & t < StepRespDuration_ms
-        # The response array length depends on the padded segment length
-        # Map indices based on the window (wnd) which corresponds to 500ms
-        samples_per_ms = len(resptmp) / step_resp_duration_ms if step_resp_duration_ms > 0 else log_rate
-        steady_state_start = int(200 * samples_per_ms)
-        steady_state_end = min(int(step_resp_duration_ms * samples_per_ms), len(resptmp))
+        # Find steady-state window using time array t, matching PID Toolbox exactly:
+        # steadyStateWindow = find(t > 200 & t < StepRespDuration_ms)
+        # steadyStateResp = resptmp(i, steadyStateWindow)
+        steady_state_window = np.where((t > 200) & (t < step_resp_duration_ms))[0]
         
-        if steady_state_end > len(resptmp):
-            steady_state_end = len(resptmp)
-        if steady_state_start >= steady_state_end:
-            steady_state_start = max(0, steady_state_end - 10)
+        if len(steady_state_window) == 0:
+            continue
         
-        steady_state_resp = resptmp[steady_state_start:steady_state_end]
+        # Use the steady state window indices to get the response values
+        # Safety check: resptmp may be longer than t (due to segment padding),
+        # but we only want indices within resptmp bounds
+        valid_indices = steady_state_window[steady_state_window < len(resptmp)]
+        if len(valid_indices) == 0:
+            continue
+        
+        steady_state_resp = resptmp[valid_indices]
         
         if len(steady_state_resp) == 0:
             continue
@@ -207,8 +210,8 @@ def calculate_step_response(
                 # resptmp(i,:) = resptmp(i,:) * (yoffset+1)
                 yoffset = 1 - steady_state_mean
                 resptmp = resptmp * (yoffset + 1)
-                # Recalculate steady state after correction
-                steady_state_resp = resptmp[steady_state_start:steady_state_end]
+                # Recalculate steady state after correction using the same indices
+                steady_state_resp = resptmp[valid_indices]
         
         # Quality control: min(steadyStateResp) > 0.5 && max(steadyStateResp) < 3
         if np.min(steady_state_resp) > 0.5 and np.max(steady_state_resp) < 3:
