@@ -199,7 +199,7 @@ def calculate_step_response(
             continue
         
         # Use the steady state window indices to get the response values
-        # Safety check: resptmp may be longer than t (due to segment padding),
+        # Safety check: resptmp may be longer than t (due to zero padding during FFT),
         # but we only want indices within resptmp bounds
         valid_indices = steady_state_window[steady_state_window < len(resptmp)]
         if len(valid_indices) == 0:
