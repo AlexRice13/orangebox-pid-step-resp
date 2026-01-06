@@ -189,11 +189,6 @@ def calculate_step_response(
         # Step response = cumulative sum of impulse response
         resptmp = np.cumsum(imp)
         
-        # Offset resptmp to skip padding and align with time array t
-        # In MATLAB, the data aligns because resptmp is a 2D matrix with proper indexing
-        # Here, we need to skip the pad_length offset to match time array indices
-        resptmp = resptmp[pad_length:]
-        
         # Y-correction: normalize so steady-state mean = 1.0
         # Find steady-state window using time array t, matching PID Toolbox exactly:
         # steadyStateWindow = find(t > 200 & t < StepRespDuration_ms)
@@ -203,7 +198,9 @@ def calculate_step_response(
         if len(steady_state_window) == 0:
             continue
         
-        # Now steady_state_window indices directly map to resptmp (after offset)
+        # Use the steady state window indices to get the response values
+        # Safety check: resptmp may be longer than t (due to segment padding),
+        # but we only want indices within resptmp bounds
         valid_indices = steady_state_window[steady_state_window < len(resptmp)]
         if len(valid_indices) == 0:
             continue
