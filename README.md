@@ -141,7 +141,7 @@ Contains results for a single axis:
 - `axis_name`: 'roll', 'pitch', or 'yaw'
 - `time_ms`: Time array in milliseconds
 - `step_response`: Step response array (normalized)
-- `rise_time_ms`: Time to reach 63.2% of final value
+- `rise_time_ms`: Time to reach 50% of final value (matching PIDtoolbox)
 - `max_overshoot`: Maximum overshoot ratio (0.1 = 10%)
 - `settling_time_ms`: Time to settle within 2% of final value
 - `pid_params`: PIDParams object with P, I, D, F, D-min values

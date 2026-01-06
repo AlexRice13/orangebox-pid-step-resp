@@ -34,7 +34,7 @@ class AxisResult:
     step_response: np.ndarray = field(default_factory=lambda: np.array([]))
     
     # Metrics
-    rise_time_ms: float = 0.0  # Time to reach ~63.2% (1-1/e) of final value
+    rise_time_ms: float = 0.0  # Time to reach 50% of final value (matching PIDtoolbox latencyHalfHeight)
     max_overshoot: float = 0.0  # Maximum overshoot ratio (0-1, where 0.1 = 10%)
     settling_time_ms: float = 0.0  # Time to settle within 2% of final value
     

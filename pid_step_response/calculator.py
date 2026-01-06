@@ -132,8 +132,8 @@ def calculate_step_response(
     
     # Find valid segments: ensure segment doesn't exceed data length
     # MATLAB: NSegs = max(find((segment_vector+segment_length) < segment_vector(end)))
-    valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
-                            if sv + segment_length <= n]
+    valid_segment_indices = [i for i, sv in enumerate(segment_vector)
+                             if sv + segment_length <= n]
     n_segs = len(valid_segment_indices)
     
     if n_segs == 0:
@@ -191,7 +191,7 @@ def calculate_step_response(
             continue
         
         # Use the steady state window indices to get the response values
-        # Safety check: resptmp may be longer than t (due to segment padding),
+        # Safety check: resptmp may be longer than t (due to zero padding during FFT),
         # but we only want indices within resptmp bounds
         valid_indices = steady_state_window[steady_state_window < len(resptmp)]
         if len(valid_indices) == 0:
@@ -314,12 +314,12 @@ def calculate_metrics(
     if abs(final_value) < 1e-10:
         return 0.0, 0.0, 0.0
     
-    # Rise time: time to reach ~63.2% (1 - 1/e) of final value
-    target_63 = 0.632 * final_value
+    # Rise time: time to reach 50% of final value (matching PIDtoolbox latencyHalfHeight)
+    target_50 = 0.5 * final_value
     rise_time_ms = 0.0
     
     for i, val in enumerate(response):
-        if val >= target_63:
+        if val >= target_50:
             rise_time_ms = time_ms[i] if i < len(time_ms) else 0.0
             break
     
