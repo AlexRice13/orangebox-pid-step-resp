@@ -130,18 +130,10 @@ def calculate_step_response(
     segment_step = max(1, round(segment_length / subsample_factor))
     segment_vector = list(range(0, n, segment_step))
     
-    # Find valid segments: ensure segment doesn't exceed last segment start
+    # Find valid segments: ensure segment doesn't exceed data length
     # MATLAB: NSegs = max(find((segment_vector+segment_length) < segment_vector(end)))
-    # Note: Using strict < comparison against last segment start position, not total length
-    if len(segment_vector) > 1:
-        valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
-                                if sv + segment_length < segment_vector[-1]]
-    elif len(segment_vector) == 1:
-        # Edge case: only one segment, check it fits in data
-        valid_segment_indices = [0] if segment_vector[0] + segment_length <= n else []
-    else:
-        # No segments at all (empty data)
-        valid_segment_indices = []
+    valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
+                            if sv + segment_length <= n]
     n_segs = len(valid_segment_indices)
     
     if n_segs == 0:
