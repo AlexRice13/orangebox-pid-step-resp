@@ -227,9 +227,10 @@ class TestCalculator(unittest.TestCase):
         
         rise_time, overshoot, settling_time = calculate_metrics(time_ms, step_response)
         
-        # Rise time should be around tau (time to reach 63.2%)
-        self.assertGreater(rise_time, 30)
-        self.assertLess(rise_time, 70)
+        # Rise time should be around 0.693*tau (time to reach 50%)
+        # For tau=50, expect rise_time ≈ 35ms
+        self.assertGreater(rise_time, 25)
+        self.assertLess(rise_time, 50)
         
         # No overshoot for first-order system
         self.assertAlmostEqual(overshoot, 0.0, places=2)

@@ -130,10 +130,18 @@ def calculate_step_response(
     segment_step = max(1, round(segment_length / subsample_factor))
     segment_vector = list(range(0, n, segment_step))
     
-    # Find valid segments: ensure segment doesn't exceed data length
+    # Find valid segments: ensure segment doesn't exceed last segment start
     # MATLAB: NSegs = max(find((segment_vector+segment_length) < segment_vector(end)))
-    valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
-                            if sv + segment_length <= n]
+    # Note: Using strict < comparison against last segment start position, not total length
+    if len(segment_vector) > 1:
+        valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
+                                if sv + segment_length < segment_vector[-1]]
+    elif len(segment_vector) == 1:
+        # Edge case: only one segment, check it fits in data
+        valid_segment_indices = [0] if segment_vector[0] + segment_length <= n else []
+    else:
+        # No segments at all (empty data)
+        valid_segment_indices = []
     n_segs = len(valid_segment_indices)
     
     if n_segs == 0:
@@ -181,6 +189,11 @@ def calculate_step_response(
         # Step response = cumulative sum of impulse response
         resptmp = np.cumsum(imp)
         
+        # Offset resptmp to skip padding and align with time array t
+        # In MATLAB, the data aligns because resptmp is a 2D matrix with proper indexing
+        # Here, we need to skip the pad_length offset to match time array indices
+        resptmp = resptmp[pad_length:]
+        
         # Y-correction: normalize so steady-state mean = 1.0
         # Find steady-state window using time array t, matching PID Toolbox exactly:
         # steadyStateWindow = find(t > 200 & t < StepRespDuration_ms)
@@ -190,9 +203,7 @@ def calculate_step_response(
         if len(steady_state_window) == 0:
             continue
         
-        # Use the steady state window indices to get the response values
-        # Safety check: resptmp may be longer than t (due to segment padding),
-        # but we only want indices within resptmp bounds
+        # Now steady_state_window indices directly map to resptmp (after offset)
         valid_indices = steady_state_window[steady_state_window < len(resptmp)]
         if len(valid_indices) == 0:
             continue
@@ -314,12 +325,12 @@ def calculate_metrics(
     if abs(final_value) < 1e-10:
         return 0.0, 0.0, 0.0
     
-    # Rise time: time to reach ~63.2% (1 - 1/e) of final value
-    target_63 = 0.632 * final_value
+    # Rise time: time to reach 50% of final value (matching PIDtoolbox latencyHalfHeight)
+    target_50 = 0.5 * final_value
     rise_time_ms = 0.0
     
     for i, val in enumerate(response):
-        if val >= target_63:
+        if val >= target_50:
             rise_time_ms = time_ms[i] if i < len(time_ms) else 0.0
             break
     
