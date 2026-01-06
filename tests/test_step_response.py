@@ -271,6 +271,21 @@ class TestCalculator(unittest.TestCase):
         rise_time, overshoot, settling_time = calculate_metrics(time_ms, step_response)
         
         self.assertEqual(overshoot, 0.0)
+    
+    def test_calculate_metrics_50_percent_threshold(self):
+        """Test that rise time uses 50% threshold, not 63.2%."""
+        # Create a linear ramp from 0 to 1 over 100ms
+        time_ms = np.linspace(0, 100, 101)
+        step_response = time_ms / 100.0  # Linear ramp
+        
+        rise_time, _, _ = calculate_metrics(time_ms, step_response)
+        
+        # For a linear ramp, 50% should be reached at t=50ms
+        # Note: final_value is computed from last 10%, so it's slightly less than 1.0
+        # This causes the 50% threshold to be reached slightly earlier
+        # Allow tolerance for this and discretization
+        self.assertGreater(rise_time, 45)
+        self.assertLess(rise_time, 55)
 
 
 class TestParser(unittest.TestCase):
