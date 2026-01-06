@@ -22,7 +22,7 @@ def plot_step_response(
     axes: Optional[List[str]] = None,
     save_path: Optional[Union[str, Path]] = None,
     show: bool = True,
-    figsize: tuple = (14, 10),
+    figsize: tuple = (15, 6),
     single_panel: bool = False,
     y_max: float = 1.75
 ) -> "Figure":
@@ -205,7 +205,7 @@ def plot_setpoint_gyro(
     time_range: Optional[tuple] = None,
     save_path: Optional[Union[str, Path]] = None,
     show: bool = True,
-    figsize: tuple = (14, 8)
+    figsize: tuple = (15, 6)
 ) -> "Figure":
     """
     Plot setpoint vs gyro curves for the specified axes.
