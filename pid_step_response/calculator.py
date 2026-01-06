@@ -132,8 +132,8 @@ def calculate_step_response(
     
     # Find valid segments: ensure segment doesn't exceed data length
     # MATLAB: NSegs = max(find((segment_vector+segment_length) < segment_vector(end)))
-    valid_segment_indices = [i for i, sv in enumerate(segment_vector) 
-                            if sv + segment_length <= n]
+    valid_segment_indices = [i for i, sv in enumerate(segment_vector)
+                             if sv + segment_length <= n]
     n_segs = len(valid_segment_indices)
     
     if n_segs == 0:
